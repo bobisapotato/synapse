@@ -53,7 +53,10 @@ class OIDCConfig(Config):
                     "Multiple OIDC providers have the idp_id %r." % idp_id
                 )
 
-        self.oidc_callback_url = self.public_baseurl + "_synapse/oidc/callback"
+        public_baseurl = self.public_baseurl
+        if public_baseurl is None:
+            raise ConfigError("oidc_config requires a public_baseurl to be set")
+        self.oidc_callback_url = public_baseurl + "_synapse/client/oidc/callback"
 
     @property
     def oidc_enabled(self) -> bool:
@@ -151,7 +154,8 @@ class OIDCConfig(Config):
         #
         #             localpart_template: Jinja2 template for the localpart of the MXID.
         #                 If this is not set, the user will be prompted to choose their
-        #                 own username.
+        #                 own username (see 'sso_auth_account_details.html' in the 'sso'
+        #                 section of this file).
         #
         #             display_name_template: Jinja2 template for the display name to set
         #                 on first login. If unset, no displayname will be set.
@@ -197,9 +201,9 @@ class OIDCConfig(Config):
           #  user_mapping_provider:
           #    config:
           #      subject_claim: "id"
-          #      localpart_template: "{{ user.login }}"
-          #      display_name_template: "{{ user.name }}"
-          #      email_template: "{{ user.email }}"
+          #      localpart_template: "{{{{ user.login }}}}"
+          #      display_name_template: "{{{{ user.name }}}}"
+          #      email_template: "{{{{ user.email }}}}"
 
           # For use with Keycloak
           #
@@ -226,8 +230,8 @@ class OIDCConfig(Config):
           #  user_mapping_provider:
           #    config:
           #      subject_claim: "id"
-          #      localpart_template: "{{ user.login }}"
-          #      display_name_template: "{{ user.name }}"
+          #      localpart_template: "{{{{ user.login }}}}"
+          #      display_name_template: "{{{{ user.name }}}}"
         """.format(
             mapping_provider=DEFAULT_USER_MAPPING_PROVIDER
         )
@@ -351,9 +355,10 @@ def _parse_oidc_config_dict(
     ump_config.setdefault("module", DEFAULT_USER_MAPPING_PROVIDER)
     ump_config.setdefault("config", {})
 
-    (user_mapping_provider_class, user_mapping_provider_config,) = load_module(
-        ump_config, config_path + ("user_mapping_provider",)
-    )
+    (
+        user_mapping_provider_class,
+        user_mapping_provider_config,
+    ) = load_module(ump_config, config_path + ("user_mapping_provider",))
 
     # Ensure loaded user mapping module has defined all necessary methods
     required_methods = [
@@ -368,7 +373,11 @@ def _parse_oidc_config_dict(
     if missing_methods:
         raise ConfigError(
             "Class %s is missing required "
-            "methods: %s" % (user_mapping_provider_class, ", ".join(missing_methods),),
+            "methods: %s"
+            % (
+                user_mapping_provider_class,
+                ", ".join(missing_methods),
+            ),
             config_path + ("user_mapping_provider", "module"),
         )
 
