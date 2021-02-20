@@ -750,7 +750,11 @@ class FederationClient(FederationBase):
         return resp[1]
 
     async def send_invite(
-        self, destination: str, room_id: str, event_id: str, pdu: EventBase,
+        self,
+        destination: str,
+        room_id: str,
+        event_id: str,
+        pdu: EventBase,
     ) -> EventBase:
         room_version = await self.store.get_room_version(room_id)
 
@@ -810,7 +814,7 @@ class FederationClient(FederationBase):
                         "User's homeserver does not support this room version",
                         Codes.UNSUPPORTED_ROOM_VERSION,
                     )
-            elif e.code == 403:
+            elif e.code in (403, 429):
                 raise e.to_synapse_error()
             else:
                 raise

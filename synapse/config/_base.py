@@ -18,17 +18,17 @@
 import argparse
 import errno
 import os
-import time
-import urllib.parse
 from collections import OrderedDict
 from hashlib import sha256
 from textwrap import dedent
-from typing import Any, Callable, Iterable, List, MutableMapping, Optional
+from typing import Any, Iterable, List, MutableMapping, Optional, Union
 
 import attr
 import jinja2
 import pkg_resources
 import yaml
+
+from synapse.util.templates import _create_mxc_to_http_filter, _format_ts_filter
 
 
 class ConfigError(Exception):
@@ -147,7 +147,20 @@ class Config:
         return int(value) * size
 
     @staticmethod
-    def parse_duration(value):
+    def parse_duration(value: Union[str, int]) -> int:
+        """Convert a duration as a string or integer to a number of milliseconds.
+
+        If an integer is provided it is treated as milliseconds and is unchanged.
+
+        String durations can have a suffix of 's', 'm', 'h', 'd', 'w', or 'y'.
+        No suffix is treated as milliseconds.
+
+        Args:
+            value: The duration to parse.
+
+        Returns:
+            The number of milliseconds in the duration.
+        """
         if isinstance(value, int):
             return value
         second = 1000
@@ -224,7 +237,9 @@ class Config:
         return self.read_templates([filename])[0]
 
     def read_templates(
-        self, filenames: List[str], custom_template_directory: Optional[str] = None,
+        self,
+        filenames: List[str],
+        custom_template_directory: Optional[str] = None,
     ) -> List[jinja2.Template]:
         """Load a list of template files from disk using the given variables.
 
@@ -262,8 +277,12 @@ class Config:
             # Search the custom template directory as well
             search_directories.insert(0, custom_template_directory)
 
+        # TODO: switch to synapse.util.templates.build_jinja_env
         loader = jinja2.FileSystemLoader(search_directories)
-        env = jinja2.Environment(loader=loader, autoescape=jinja2.select_autoescape(),)
+        env = jinja2.Environment(
+            loader=loader,
+            autoescape=jinja2.select_autoescape(),
+        )
 
         # Update the environment with our custom filters
         env.filters.update(
@@ -275,38 +294,6 @@ class Config:
 
         # Load the templates
         return [env.get_template(filename) for filename in filenames]
-
-
-def _format_ts_filter(value: int, format: str):
-    return time.strftime(format, time.localtime(value / 1000))
-
-
-def _create_mxc_to_http_filter(public_baseurl: str) -> Callable:
-    """Create and return a jinja2 filter that converts MXC urls to HTTP
-
-    Args:
-        public_baseurl: The public, accessible base URL of the homeserver
-    """
-
-    def mxc_to_http_filter(value, width, height, resize_method="crop"):
-        if value[0:6] != "mxc://":
-            return ""
-
-        server_and_media_id = value[6:]
-        fragment = None
-        if "#" in server_and_media_id:
-            server_and_media_id, fragment = server_and_media_id.split("#", 1)
-            fragment = "#" + fragment
-
-        params = {"width": width, "height": height, "method": resize_method}
-        return "%s_matrix/media/v1/thumbnail/%s?%s%s" % (
-            public_baseurl,
-            server_and_media_id,
-            urllib.parse.urlencode(params),
-            fragment or "",
-        )
-
-    return mxc_to_http_filter
 
 
 class RootConfig:
@@ -856,8 +843,7 @@ class ShardedWorkerHandlingConfig:
     instances = attr.ib(type=List[str])
 
     def should_handle(self, instance_name: str, key: str) -> bool:
-        """Whether this instance is responsible for handling the given key.
-        """
+        """Whether this instance is responsible for handling the given key."""
         # If multiple instances are not defined we always return true
         if not self.instances or len(self.instances) == 1:
             return True
